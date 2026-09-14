@@ -1,13 +1,6 @@
 # ============================================================================
 # Сборка базовых образов: ROS2 Humble + CUDA
 # ============================================================================
-# Платформы:
-#   amd64      — x86_64 + NVIDIA GPU (CUDA 12.9)
-#   arm64-agx  — Jetson AGX Orin (JetPack 6.2.2, L4T R36.5.0)
-#   arm64-nano — Jetson Orin Nano (JetPack 7, L4T R38.x)
-#
-# Триггеры: push в main (при изменении docker/base/), тег, ручной запуск
-# ============================================================================
 name: Build Base Images
 
 on:
@@ -21,7 +14,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/ros2-humble-cuda-base
 
 jobs:
   build-base:
@@ -30,23 +22,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # --- x86_64: NVIDIA CUDA devel ---
           - platform: amd64
             base_image: 'nvidia/cuda:12.9.0-devel-ubuntu22.04'
             tags: 'amd64'
             docker_platform: 'linux/amd64'
 
-          # --- ARM64: Jetson AGX Orin (JetPack 6.2.2 / L4T R36.5.0) ---
-          # ВАЖНО: официального r36.5.0 на NGC нет, используем r36.4.0
-          # (совместим с 36.4.x и 36.5.0 согласно форуму NVIDIA)
           - platform: arm64-agx
             base_image: 'nvcr.io/nvidia/l4t-jetpack:r36.4.0'
             tags: 'arm64-agx'
             docker_platform: 'linux/arm64'
 
-          # --- ARM64: Jetson Orin Nano (JetPack 7 / L4T R38.x) ---
-          # Для JetPack 7 официальный l4t-jetpack не выпущен,
-          # используем CUDA 13.0 devel на Ubuntu 24.04 (рекомендация NVIDIA)
           - platform: arm64-nano
             base_image: 'nvcr.io/nvidia/cuda:13.0.0-devel-ubuntu24.04'
             tags: 'arm64-nano'
@@ -55,6 +40,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set lowercase repository slug
+        run: |
+          REPO_SLUG=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          echo "REPO_SLUG=${REPO_SLUG}" >> $GITHUB_ENV
+          echo "Repo slug: ${REPO_SLUG}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -79,15 +70,15 @@ jobs:
           platforms: ${{ matrix.docker_platform }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tags }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tags }}-latest
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tags }}
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tags }}-latest
           cache-from: type=gha,scope=base-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=base-${{ matrix.platform }}
 
       - name: Verify CUDA and L4T version
         run: |
           docker run --rm \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tags }} \
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tags }} \
             bash -c "
               echo '=== CUDA check ==='
               ldconfig -p | grep libcudart || exit 1

@@ -1,9 +1,6 @@
 # ============================================================================
 # Сборка ROS2-пакетов с CUDA
 # ============================================================================
-# Матрица: пакет × платформа × тип сборки (cross/native)
-# Триггеры: push в main, тег, PR, ручной запуск
-# ============================================================================
 name: Build Packages
 
 on:
@@ -35,12 +32,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_BASE: ${{ github.repository }}/ros2-humble-cuda-base
 
 jobs:
-  # ==========================================================================
-  # JOB 1: Генерация динамической матрицы из packages.yaml
-  # ==========================================================================
   setup:
     runs-on: ubuntu-22.04
     outputs:
@@ -78,7 +71,6 @@ jobs:
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           [ -z "$BUILD_TYPE" ] && BUILD_TYPE="cross"
 
-          # -c = compact JSON (одна строка) — ОБЯЗАТЕЛЬНО для GITHUB_OUTPUT
           MATRIX=$(jq -nc \
             --argjson pkgs "$PACKAGES" \
             --argjson plats "$PLATFORMS" \
@@ -101,14 +93,9 @@ jobs:
             ]}')
 
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo "=== Generated matrix (compact) ==="
-          echo "$MATRIX"
-          echo "=== Pretty printed for readability ==="
+          echo "=== Matrix generated ==="
           echo "$MATRIX" | jq .
 
-  # ==========================================================================
-  # JOB 2: Сборка (динамический runner: ubuntu-22.04 или self-hosted Jetson)
-  # ==========================================================================
   build:
     needs: setup
     runs-on: ${{ matrix.runner }}
@@ -118,6 +105,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set lowercase repository slug
+        run: |
+          REPO_SLUG=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          echo "REPO_SLUG=${REPO_SLUG}" >> $GITHUB_ENV
+          echo "Repo slug: ${REPO_SLUG}"
 
       - name: Set up QEMU (cross only)
         if: matrix.build_type == 'cross'
@@ -139,7 +132,7 @@ jobs:
           context: .
           file: ./docker/package/Dockerfile.template
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}:${{ matrix.platform }}
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.platform }}
             PACKAGE_GIT=${{ matrix.git }}
             PACKAGE_BRANCH=${{ matrix.branch }}
             PACKAGE_NAME=${{ matrix.package }}
@@ -149,37 +142,34 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}-latest
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}-latest
           cache-from: type=gha,scope=pkg-${{ matrix.package }}-${{ matrix.platform }}-${{ matrix.build_type }}
           cache-to: type=gha,mode=max,scope=pkg-${{ matrix.package }}-${{ matrix.platform }}-${{ matrix.build_type }}
 
-      # --- Тест 1: CUDA ---
       - name: "Test: CUDA availability"
         if: github.event_name == 'pull_request' || matrix.build_type == 'native'
         run: |
           docker run --rm \
-            ${{ env.REGISTRY }}/${{ github.repository }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }} \
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }} \
             bash -c "ldconfig -p | grep libcudart || exit 1"
 
-      # --- Тест 2: ROS2 пакет ---
       - name: "Test: ROS2 package"
         if: github.event_name == 'pull_request' || matrix.build_type == 'native'
         run: |
           docker run --rm \
-            ${{ env.REGISTRY }}/${{ github.repository }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }} \
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }} \
             bash -c "
               source /opt/ros/humble/setup.bash
               source /ros2_ws/install/setup.bash
               ros2 pkg list | grep -i '${{ matrix.package }}' || exit 1
             "
 
-      # --- Trivy: сканирование уязвимостей (только cross) ---
       - name: Run Trivy scanner
         if: github.event_name == 'pull_request' && matrix.build_type == 'cross'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.REGISTRY }}/${{ github.repository }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}'
+          image-ref: '${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
