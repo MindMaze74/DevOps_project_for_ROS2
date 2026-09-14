@@ -20,7 +20,7 @@ RUN git clone --depth 1 --branch ${PACKAGE_BRANCH} \
 
 # --- Специфичные зависимости FAST-LIVO2 (Sophus + Vikit) ---
 RUN if [ "${PACKAGE_NAME}" = "fast-livo2" ] || [ "${PACKAGE_NAME}" = "FAST-LIVO2" ]; then \
-        echo "=== Installing Sophus (GCC 11+ patch) ===" && \
+        echo "=== Installing Sophus ===" && \
         git clone --depth 1 https://github.com/strasdat/Sophus.git /tmp/Sophus && \
         cd /tmp/Sophus && git checkout a621ff2e && \
         sed -i -E \
@@ -46,7 +46,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
         --parallel-workers $(nproc)
 
 # ============================================================================
-# Финальная стадия: только артефакты (без исходников и компиляторов)
+# Финальная стадия: только артефакты
 # ============================================================================
 FROM ${BASE_IMAGE} AS final
 

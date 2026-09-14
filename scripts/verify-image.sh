@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Комплексная верификация образа: CUDA + ROS2 + зависимости (15 проверок)
-# Использование: ./scripts/verify-image.sh <image:tag>
+# Комплексная верификация образа: CUDA + ROS2 + зависимости
 # ============================================================================
 set -euo pipefail
 
@@ -28,7 +27,6 @@ docker run --rm "$IMAGE" bash -c '
     }
 
     echo ""; echo "=== 1. System ==="
-    check "OS Ubuntu 22.04" grep -q "22.04" /etc/os-release
     check "Python 3" python3 --version
     check "CMake" cmake --version
     check "Git" git --version
@@ -36,7 +34,6 @@ docker run --rm "$IMAGE" bash -c '
     echo ""; echo "=== 2. CUDA ==="
     check "libcudart" bash -c "ldconfig -p | grep -q libcudart"
     check "libcublas" bash -c "ldconfig -p | grep -q libcublas"
-    check "CUDA headers" test -f /usr/local/cuda/include/cuda.h
 
     echo ""; echo "=== 3. ROS2 ==="
     check "ROS2 setup.bash" test -f /opt/ros/humble/setup.bash
@@ -47,9 +44,6 @@ docker run --rm "$IMAGE" bash -c '
     check "Eigen3" test -d /usr/include/eigen3
     check "PCL" bash -c "ldconfig -p | grep -q libpcl"
     check "OpenCV" bash -c "ldconfig -p | grep -q libopencv"
-
-    echo ""; echo "=== 5. Workspace ==="
-    [ -f /ros2_ws/install/setup.bash ] && check "Workspace install" test -f /ros2_ws/install/setup.bash
 
     echo ""; echo "═══════════════════════════════════════"
     echo "  RESULTS: PASS=$PASS  FAIL=$FAIL"

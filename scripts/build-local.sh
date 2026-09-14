@@ -11,7 +11,7 @@ PLATFORM="${2:-}"
 if [ -z "$PACKAGE" ] || [ -z "$PLATFORM" ]; then
     echo "Usage: $0 <package> <platform>"
     echo "  package : fast-lio2 | fast-livo2"
-    echo "  platform: amd64 | arm64-agx | arm64-nano"
+    echo "  platform: amd64 | arm64-agx-cross | arm64-nano-cross"
     exit 1
 fi
 
@@ -19,9 +19,9 @@ REGISTRY="${REGISTRY:-ghcr.io}"
 OWNER="${OWNER:-MindMaze74}"
 
 case "$PLATFORM" in
-    amd64)      DOCKER_PLATFORM="linux/amd64"; CUDA_ARCH="75" ;;
-    arm64-agx)  DOCKER_PLATFORM="linux/arm64"; CUDA_ARCH="87" ;;
-    arm64-nano) DOCKER_PLATFORM="linux/arm64"; CUDA_ARCH="72" ;;
+    amd64)            DOCKER_PLATFORM="linux/amd64"; CUDA_ARCH="75" ;;
+    arm64-agx-cross)  DOCKER_PLATFORM="linux/arm64"; CUDA_ARCH="87" ;;
+    arm64-nano-cross) DOCKER_PLATFORM="linux/arm64"; CUDA_ARCH="72" ;;
     *) echo "Unknown platform: $PLATFORM"; exit 1 ;;
 esac
 
@@ -46,7 +46,6 @@ echo "============================================"
 echo " Building: $PACKAGE"
 echo " Platform: $PLATFORM ($DOCKER_PLATFORM)"
 echo " CUDA Arch: $CUDA_ARCH"
-echo " Base: $REGISTRY/$OWNER/ros2-humble-cuda-base:$PLATFORM"
 echo "============================================"
 
 docker buildx build \
@@ -64,4 +63,3 @@ docker buildx build \
 
 echo ""
 echo "=== BUILD SUCCESSFUL ==="
-echo "Image: $REGISTRY/$OWNER/ros2-package-$PACKAGE:$PLATFORM"

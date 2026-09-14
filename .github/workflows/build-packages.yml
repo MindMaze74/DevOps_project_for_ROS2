@@ -1,3 +1,6 @@
+# ============================================================================
+# Сборка ROS2-пакетов поверх базовых образов
+# ============================================================================
 name: Build Packages
 
 on:
@@ -7,6 +10,7 @@ on:
     paths:
       - 'docker/package/**'
       - 'config/**'
+      - '.github/workflows/build-packages.yml'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -18,9 +22,9 @@ on:
         description: 'Platform (empty = all)'
         default: ''
       build_type:
-        description: 'cross | native | both'
-        default: 'cross'
+        description: 'Build type'
         type: choice
+        default: 'cross'
         options: [ cross, native, both ]
 
 env:
@@ -40,39 +44,55 @@ jobs:
         run: |
           PACKAGES=$(yq -o=json -I=0 '.packages' config/packages.yaml)
 
-          # Платформы с runner-ами по ТЗ
-          PLATFORMS='[
-            {"name":"amd64","cuda_arch":"75","platform":"linux/amd64",
-             "cross_runner":"ubuntu-22.04",
-             "native_runner":"ubuntu-22.04",
-             "supports_native":false},
-            {"name":"arm64-agx","cuda_arch":"87","platform":"linux/arm64",
-             "cross_runner":"ubuntu-22.04",
-             "native_runner":"[self-hosted, linux, arm64, jetson-agx]",
-             "supports_native":true},
-            {"name":"arm64-nano","cuda_arch":"72","platform":"linux/arm64",
-             "cross_runner":"ubuntu-22.04",
-             "native_runner":"[self-hosted, linux, arm64, jetson-nano]",
-             "supports_native":true}
+          SELECTED_PKG="${{ github.event.inputs.package }}"
+          if [ -n "$SELECTED_PKG" ]; then
+            PACKAGES=$(echo "$PACKAGES" | jq --arg p "$SELECTED_PKG" \
+              '[.[] | select(.name == $p)]')
+          fi
+
+          COMBOS='[
+            {"platform":"amd64","tag_suffix":"amd64","cuda_arch":"75",
+             "docker_platform":"linux/amd64","build_type":"cross",
+             "runner":"ubuntu-22.04"},
+            {"platform":"arm64-agx","tag_suffix":"arm64-agx-cross","cuda_arch":"87",
+             "docker_platform":"linux/arm64","build_type":"cross",
+             "runner":"ubuntu-22.04"},
+            {"platform":"arm64-agx","tag_suffix":"arm64-agx-native","cuda_arch":"87",
+             "docker_platform":"linux/arm64","build_type":"native",
+             "runner":"[self-hosted, linux, arm64, jetson-agx]"},
+            {"platform":"arm64-nano","tag_suffix":"arm64-nano-cross","cuda_arch":"72",
+             "docker_platform":"linux/arm64","build_type":"cross",
+             "runner":"ubuntu-22.04"},
+            {"platform":"arm64-nano","tag_suffix":"arm64-nano-native","cuda_arch":"72",
+             "docker_platform":"linux/arm64","build_type":"native",
+             "runner":"[self-hosted, linux, arm64, jetson-nano]"}
           ]'
+
+          SELECTED_PLAT="${{ github.event.inputs.platform }}"
+          if [ -n "$SELECTED_PLAT" ]; then
+            COMBOS=$(echo "$COMBOS" | jq --arg p "$SELECTED_PLAT" \
+              '[.[] | select(.platform == $p)]')
+          fi
 
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           [ -z "$BUILD_TYPE" ] && BUILD_TYPE="cross"
 
-          MATRIX=$(jq -nc \
-            --argjson pkgs "$PACKAGES" \
-            --argjson plats "$PLATFORMS" \
-            --arg bt "$BUILD_TYPE" \
+          if [ "$BUILD_TYPE" = "both" ]; then
+            FILTERED="$COMBOS"
+          else
+            FILTERED=$(echo "$COMBOS" | jq -c --arg bt "$BUILD_TYPE" \
+              '[.[] | select(.build_type == $bt)]')
+          fi
+
+          MATRIX=$(jq -nc --argjson pkgs "$PACKAGES" --argjson combos "$FILTERED" \
             '{include: [
-              $plats[] as $p | $pkgs[] as $pkg |
-              (if $bt == "both" then ["cross","native"] else [$bt] end)[] as $type |
-              select($type == "cross" or ($type == "native" and $p.supports_native)) |
-              {
-                platform: $p.name,
-                docker_platform: $p.platform,
-                cuda_arch: $p.cuda_arch,
-                runner: (if $type == "native" then $p.native_runner else $p.cross_runner end),
-                build_type: $type,
+              $combos[] as $c | $pkgs[] as $pkg | {
+                platform: $c.platform,
+                tag_suffix: $c.tag_suffix,
+                cuda_arch: $c.cuda_arch,
+                docker_platform: $c.docker_platform,
+                build_type: $c.build_type,
+                runner: $c.runner,
                 package: $pkg.name,
                 git: $pkg.git,
                 branch: $pkg.branch,
@@ -117,7 +137,7 @@ jobs:
           context: .
           file: ./docker/package/Dockerfile.template
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.platform }}
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tag_suffix }}
             PACKAGE_GIT=${{ matrix.git }}
             PACKAGE_BRANCH=${{ matrix.branch }}
             PACKAGE_NAME=${{ matrix.package }}
@@ -127,23 +147,23 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}
-            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}-latest
-          cache-from: type=gha,scope=pkg-${{ matrix.package }}-${{ matrix.platform }}-${{ matrix.build_type }}
-          cache-to: type=gha,mode=max,scope=pkg-${{ matrix.package }}-${{ matrix.platform }}-${{ matrix.build_type }}
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.tag_suffix }}
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.tag_suffix }}-latest
+          cache-from: type=gha,scope=pkg-${{ matrix.package }}-${{ matrix.tag_suffix }}
+          cache-to: type=gha,mode=max,scope=pkg-${{ matrix.package }}-${{ matrix.tag_suffix }}
 
       - name: "Test: CUDA"
         if: github.event_name == 'pull_request' || matrix.build_type == 'native'
         run: |
           docker run --rm \
-            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }} \
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.tag_suffix }} \
             bash -c "ldconfig -p | grep libcudart || exit 1"
 
-      - name: "Test: ROS2 package"
+      - name: "Test: ROS2"
         if: github.event_name == 'pull_request' || matrix.build_type == 'native'
         run: |
           docker run --rm \
-            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }} \
+            ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.tag_suffix }} \
             bash -c "
               source /opt/ros/humble/setup.bash
               source /ros2_ws/install/setup.bash

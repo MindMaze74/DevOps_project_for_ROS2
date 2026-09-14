@@ -1,4 +1,3 @@
-# Exclude unnecessary files from Docker build context
 .git
 .github
 docs

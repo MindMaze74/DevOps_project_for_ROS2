@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
 # Верификация CUDA в Docker-образе
-# Использование: ./scripts/test-cuda.sh <image:tag>
 # ============================================================================
 set -euo pipefail
 
@@ -24,15 +23,13 @@ docker run --rm "$IMAGE" bash -c '
     if command -v nvcc &>/dev/null; then
         nvcc --version
     else
-        echo "nvcc not found (runtime-only image)"
+        echo "nvcc not found (runtime-only)"
     fi
 
     echo ""
     echo "--- 3. CUDA Devices ---"
     if command -v nvidia-smi &>/dev/null; then
-        nvidia-smi 2>/dev/null || echo "nvidia-smi present, no GPU visible in CI"
-    else
-        echo "nvidia-smi not available"
+        nvidia-smi 2>/dev/null || echo "no GPU visible in CI"
     fi
 
     echo ""

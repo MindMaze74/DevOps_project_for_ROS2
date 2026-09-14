@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
 # Верификация ROS2 и пакета в Docker-образе
-# Использование: ./scripts/test-ros2.sh <image:tag> <package_name>
 # ============================================================================
 set -euo pipefail
 
@@ -25,17 +24,13 @@ docker run --rm "$IMAGE" bash -c "
     ros2 --version || exit 1
 
     echo ''
-    echo '--- 2. Workspace Overlay ---'
+    echo '--- 2. Package Registration ---'
     source /ros2_ws/install/setup.bash
-    echo \"AMENT_PREFIX_PATH=\$AMENT_PREFIX_PATH\"
-
-    echo ''
-    echo '--- 3. Package Registration ---'
-    ros2 pkg list | grep -i '$PACKAGE' || { echo 'FAIL: package not found'; exit 1; }
+    ros2 pkg list | grep -i '$PACKAGE' || { echo 'FAIL'; exit 1; }
     echo 'OK: package registered'
 
     echo ''
-    echo '--- 4. Package Executables ---'
+    echo '--- 3. Package Executables ---'
     ros2 pkg executables '$PACKAGE' || echo 'No executables found'
 
     echo ''
