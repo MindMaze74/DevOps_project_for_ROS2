@@ -78,7 +78,8 @@ jobs:
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           [ -z "$BUILD_TYPE" ] && BUILD_TYPE="cross"
 
-          MATRIX=$(jq -n \
+          # -c = compact JSON (одна строка) — ОБЯЗАТЕЛЬНО для GITHUB_OUTPUT
+          MATRIX=$(jq -nc \
             --argjson pkgs "$PACKAGES" \
             --argjson plats "$PLATFORMS" \
             --arg bt "$BUILD_TYPE" \
@@ -100,6 +101,9 @@ jobs:
             ]}')
 
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "=== Generated matrix (compact) ==="
+          echo "$MATRIX"
+          echo "=== Pretty printed for readability ==="
           echo "$MATRIX" | jq .
 
   # ==========================================================================
