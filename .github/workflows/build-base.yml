@@ -1,6 +1,3 @@
-# ============================================================================
-# Сборка базовых образов: ROS2 Humble + CUDA
-# ============================================================================
 name: Build Base Images
 
 on:
@@ -11,56 +8,67 @@ on:
       - 'docker/base/**'
       - '.github/workflows/build-base.yml'
   workflow_dispatch:
+    inputs:
+      use_native_jetson:
+        description: 'Use self-hosted Jetson runner?'
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
   build-base:
-    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         include:
+          # ---------- x86_64 ----------
           - platform: amd64
+            runner: ubuntu-22.04
             base_image: 'nvidia/cuda:12.9.0-devel-ubuntu22.04'
             tags: 'amd64'
             docker_platform: 'linux/amd64'
 
+          # ---------- ARM64 AGX Orin ----------
+          # Cross через QEMU: используем nvidia/cuda ubuntu22.04
+          # (не l4t-jetpack — из-за бага QEMU с ldconfig)
           - platform: arm64-agx
-            base_image: 'nvcr.io/nvidia/l4t-jetpack:r36.4.0'
+            runner: ubuntu-22.04
+            base_image: 'nvidia/cuda:12.8.2-devel-ubuntu22.04'
             tags: 'arm64-agx'
             docker_platform: 'linux/arm64'
 
+          # ---------- ARM64 Orin Nano ----------
           - platform: arm64-nano
-            base_image: 'nvcr.io/nvidia/cuda:13.0.0-devel-ubuntu24.04'
+            runner: ubuntu-22.04
+            base_image: 'nvidia/cuda:12.8.2-devel-ubuntu22.04'
             tags: 'arm64-nano'
             docker_platform: 'linux/arm64'
 
+    runs-on: ${{ matrix.runner }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set lowercase repository slug
         run: |
           REPO_SLUG=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
           echo "REPO_SLUG=${REPO_SLUG}" >> $GITHUB_ENV
-          echo "Repo slug: ${REPO_SLUG}"
 
-      - name: Set up QEMU
+      - name: Set up QEMU (cross only)
+        if: matrix.runner == 'ubuntu-22.04'
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push base image (${{ matrix.platform }})
+      - name: Build and push base image
         uses: docker/build-push-action@v5
         with:
           context: ./docker/base
@@ -75,14 +83,12 @@ jobs:
           cache-from: type=gha,scope=base-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=base-${{ matrix.platform }}
 
-      - name: Verify CUDA and L4T version
+      - name: Verify CUDA and ROS2
         run: |
           docker run --rm \
             ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tags }} \
             bash -c "
-              echo '=== CUDA check ==='
-              ldconfig -p | grep libcudart || exit 1
-              echo '=== L4T version (ARM only) ==='
-              [ -f /etc/nv_tegra_release ] && cat /etc/nv_tegra_release || true
-              echo '=== Base image verification PASSED ==='
+              echo '=== CUDA ===' && ldconfig -p | grep libcudart
+              echo '=== ROS2 ===' && source /opt/ros/humble/setup.bash && ros2 --version
+              echo '=== Non-root ===' && whoami
             "

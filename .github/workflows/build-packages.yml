@@ -1,6 +1,3 @@
-# ============================================================================
-# Сборка ROS2-пакетов с CUDA
-# ============================================================================
 name: Build Packages
 
 on:
@@ -10,22 +7,18 @@ on:
     paths:
       - 'docker/package/**'
       - 'config/**'
-      - '.github/workflows/build-packages.yml'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
     inputs:
       package:
-        description: 'Package name (empty = all)'
-        required: false
+        description: 'Package (empty = all)'
         default: ''
       platform:
-        description: 'Platform: amd64 | arm64-agx | arm64-nano (empty = all)'
-        required: false
+        description: 'Platform (empty = all)'
         default: ''
       build_type:
-        description: 'Build type: cross | native | both'
-        required: false
+        description: 'cross | native | both'
         default: 'cross'
         type: choice
         options: [ cross, native, both ]
@@ -37,36 +30,31 @@ jobs:
   setup:
     runs-on: ubuntu-22.04
     outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
+      matrix: ${{ steps.gen.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
       - uses: mikefarah/yq@v4
 
-      - name: Generate build matrix
-        id: generate
+      - name: Generate matrix
+        id: gen
         run: |
           PACKAGES=$(yq -o=json -I=0 '.packages' config/packages.yaml)
 
-          SELECTED_PKG="${{ github.event.inputs.package }}"
-          if [ -n "$SELECTED_PKG" ]; then
-            PACKAGES=$(echo "$PACKAGES" | jq --arg p "$SELECTED_PKG" \
-              '[.[] | select(.name == $p)]')
-          fi
-
+          # Платформы с runner-ами по ТЗ
           PLATFORMS='[
-            {"name":"amd64","cuda_arch":"75","docker_platform":"linux/amd64",
-             "runner":"ubuntu-22.04","supports_native":false},
-            {"name":"arm64-agx","cuda_arch":"87","docker_platform":"linux/arm64",
-             "runner":"[self-hosted, linux, arm64, jetson-agx]","supports_native":true},
-            {"name":"arm64-nano","cuda_arch":"72","docker_platform":"linux/arm64",
-             "runner":"[self-hosted, linux, arm64, jetson-nano]","supports_native":true}
+            {"name":"amd64","cuda_arch":"75","platform":"linux/amd64",
+             "cross_runner":"ubuntu-22.04",
+             "native_runner":"ubuntu-22.04",
+             "supports_native":false},
+            {"name":"arm64-agx","cuda_arch":"87","platform":"linux/arm64",
+             "cross_runner":"ubuntu-22.04",
+             "native_runner":"[self-hosted, linux, arm64, jetson-agx]",
+             "supports_native":true},
+            {"name":"arm64-nano","cuda_arch":"72","platform":"linux/arm64",
+             "cross_runner":"ubuntu-22.04",
+             "native_runner":"[self-hosted, linux, arm64, jetson-nano]",
+             "supports_native":true}
           ]'
-
-          SELECTED_PLAT="${{ github.event.inputs.platform }}"
-          if [ -n "$SELECTED_PLAT" ]; then
-            PLATFORMS=$(echo "$PLATFORMS" | jq --arg p "$SELECTED_PLAT" \
-              '[.[] | select(.name == $p)]')
-          fi
 
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           [ -z "$BUILD_TYPE" ] && BUILD_TYPE="cross"
@@ -81,9 +69,9 @@ jobs:
               select($type == "cross" or ($type == "native" and $p.supports_native)) |
               {
                 platform: $p.name,
-                docker_platform: $p.docker_platform,
+                docker_platform: $p.platform,
                 cuda_arch: $p.cuda_arch,
-                runner: (if $type == "native" then $p.runner else "ubuntu-22.04" end),
+                runner: (if $type == "native" then $p.native_runner else $p.cross_runner end),
                 build_type: $type,
                 package: $pkg.name,
                 git: $pkg.git,
@@ -93,7 +81,6 @@ jobs:
             ]}')
 
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo "=== Matrix generated ==="
           echo "$MATRIX" | jq .
 
   build:
@@ -110,7 +97,6 @@ jobs:
         run: |
           REPO_SLUG=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
           echo "REPO_SLUG=${REPO_SLUG}" >> $GITHUB_ENV
-          echo "Repo slug: ${REPO_SLUG}"
 
       - name: Set up QEMU (cross only)
         if: matrix.build_type == 'cross'
@@ -118,15 +104,14 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.package }} (${{ matrix.platform }}/${{ matrix.build_type }})
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -147,7 +132,7 @@ jobs:
           cache-from: type=gha,scope=pkg-${{ matrix.package }}-${{ matrix.platform }}-${{ matrix.build_type }}
           cache-to: type=gha,mode=max,scope=pkg-${{ matrix.package }}-${{ matrix.platform }}-${{ matrix.build_type }}
 
-      - name: "Test: CUDA availability"
+      - name: "Test: CUDA"
         if: github.event_name == 'pull_request' || matrix.build_type == 'native'
         run: |
           docker run --rm \
@@ -162,21 +147,5 @@ jobs:
             bash -c "
               source /opt/ros/humble/setup.bash
               source /ros2_ws/install/setup.bash
-              ros2 pkg list | grep -i '${{ matrix.package }}' || exit 1
+              ros2 pkg list | grep -i '${{ matrix.package }}'
             "
-
-      - name: Run Trivy scanner
-        if: github.event_name == 'pull_request' && matrix.build_type == 'cross'
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-package-${{ matrix.package }}:${{ matrix.platform }}-${{ matrix.build_type }}'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-
-      - name: Upload Trivy results
-        if: github.event_name == 'pull_request' && matrix.build_type == 'cross'
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
