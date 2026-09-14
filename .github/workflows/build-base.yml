@@ -141,6 +141,7 @@ jobs:
       - name: Verify image (ROS2 + CUDA per TZ)
         run: |
           docker run --rm \
+            --platform ${{ matrix.docker_platform }} \
             ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tag_suffix }} \
             bash -c "
               set -e
