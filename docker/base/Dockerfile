@@ -19,15 +19,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Репозиторий ROS2 (только x86_64) ---
-RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-            -o /usr/share/keyrings/ros-archive-keyring.gpg && \
-        echo "deb [arch=$(dpkg --print-architecture) \
-            signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
-            http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
-            > /etc/apt/sources.list.d/ros2.list; \
-    fi
+# --- Репозиторий ROS2 (все архитектуры) ---
+# ИСПРАВЛЕНО: убрано условие uname -m, потому что:
+#   - На ARM64 внутри QEMU uname возвращает "aarch64" → репа не добавлялась
+#   - nvidia/cuda:*-ubuntu22.04 НЕ содержит ROS2 репу
+#   - На Jetson (l4t-jetpack) репа уже есть, но повторное добавление безопасно
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) \
+        signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+        http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/ros2.list
 
 # --- ROS2 Humble + инструменты сборки ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
