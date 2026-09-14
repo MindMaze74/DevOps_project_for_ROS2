@@ -21,7 +21,7 @@ docker run --rm "$IMAGE" bash -c "
     echo '--- 1. ROS2 Distribution ---'
     source /opt/ros/humble/setup.bash
     echo \"ROS_DISTRO=\$ROS_DISTRO\"
-    ros2 --version || exit 1
+    ros2 --help > /dev/null 2>&1 && echo 'PASS: ros2 --help' || exit 1
 
     echo ''
     echo '--- 2. Package Registration ---'

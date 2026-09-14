@@ -21,9 +21,11 @@ docker run --rm "$IMAGE" bash -c '
     echo ""
     echo "--- 2. CUDA Toolkit (nvcc) ---"
     if command -v nvcc &>/dev/null; then
-        nvcc --version
+        nvcc --version || { echo "FAIL: nvcc --version"; exit 1; }
+        echo "PASS: nvcc --version"
     else
-        echo "nvcc not found (runtime-only)"
+        echo "FAIL: nvcc not found"
+        exit 1
     fi
 
     echo ""

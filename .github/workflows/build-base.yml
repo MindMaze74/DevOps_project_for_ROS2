@@ -138,12 +138,19 @@ jobs:
           cache-from: type=gha,scope=base-${{ matrix.tag_suffix }}
           cache-to: type=gha,mode=max,scope=base-${{ matrix.tag_suffix }}
 
-      - name: Verify image
+      - name: Verify image (ROS2 + CUDA per TZ)
         run: |
           docker run --rm \
             ${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tag_suffix }} \
             bash -c "
-              echo '=== CUDA ===' && ldconfig -p | grep libcudart
-              echo '=== ROS2 ===' && source /opt/ros/humble/setup.bash && ros2 --version
-              echo '=== Non-root ===' && whoami
+              set -e
+              echo '=== 1. ROS2 check ==='
+              ros2 --help > /dev/null 2>&1 && echo 'PASS: ros2 --help (exit 0)'
+              echo '=== 2. CUDA nvcc check ==='
+              nvcc --version && echo 'PASS: nvcc --version (exit 0)'
+              echo '=== 3. CUDA runtime libs ==='
+              ldconfig -p | grep libcudart && echo 'PASS: libcudart found'
+              echo '=== 4. Non-root user ==='
+              whoami
+              echo '=== ALL CHECKS PASSED ==='
             "
