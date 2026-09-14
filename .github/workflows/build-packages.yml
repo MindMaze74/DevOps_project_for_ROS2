@@ -88,6 +88,8 @@ jobs:
         uses: ./.github/actions/docker-setup
         with:
           setup_qemu: ${{ matrix.build_type == 'cross' && 'true' || 'false' }}
+          ngc_login: 'false'
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Определение base-тега ---
       # amd64/cross:     <tag_suffix>-<variant>              (напр. amd64-slam)

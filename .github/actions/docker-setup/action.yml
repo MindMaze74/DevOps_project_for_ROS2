@@ -3,15 +3,12 @@
 # ============================================================================
 # Устраняет дублирование шагов между build-base.yml и build-packages.yml.
 #
-# Что делает:
-#   - Устанавливает REPO_SLUG (lowercase от github.repository) в $GITHUB_ENV
-#   - Опционально включает QEMU (для cross-сборок ARM64)
-#   - Устанавливает Buildx
-#   - Логин в GHCR
-#   - Опционально логин в NVIDIA NGC
+# ВАЖНО: composite actions НЕ имеют доступа к secrets напрямую.
+# Секреты (GITHUB_TOKEN, NGC_API_KEY) передаются явно через inputs
+# из вызывающего workflow.
 # ============================================================================
 name: 'Docker Setup'
-description: 'Lowercase slug, QEMU, Buildx, GHCR/NGС login'
+description: 'Lowercase slug, QEMU, Buildx, GHCR/NGC login'
 
 inputs:
   registry:
@@ -26,6 +23,13 @@ inputs:
     description: 'Login to NVIDIA NGC (true/false)'
     required: false
     default: 'false'
+  ghcr_token:
+    description: 'GHCR token (pass ${{ secrets.GITHUB_TOKEN }})'
+    required: true
+  ngc_api_key:
+    description: 'NVIDIA NGC API key (pass ${{ secrets.NGC_API_KEY }})'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -49,7 +53,7 @@ runs:
       with:
         registry: ${{ inputs.registry }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ inputs.ghcr_token }}
 
     - name: Log in to NVIDIA NGC
       if: inputs.ngc_login == 'true'
@@ -57,4 +61,4 @@ runs:
       with:
         registry: nvcr.io
         username: $oauthtoken
-        password: ${{ secrets.NGC_API_KEY }}
+        password: ${{ inputs.ngc_api_key }}

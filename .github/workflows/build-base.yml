@@ -12,8 +12,7 @@
 #
 # Способ native (self-hosted Jetson):
 #   - arm64-agx-native → nvcr.io/nvidia/l4t-jetpack:r36.4.0
-#                        (содержит SLAM-библиотеки из коробки, отдельный
-#                         -slam/-minimal split не делается)
+#   - arm64-nano-native→ nvcr.io/nvidia/l4t-jetpack:r36.4.0
 # ============================================================================
 name: Build Base Images
 
@@ -79,6 +78,8 @@ jobs:
         with:
           setup_qemu: ${{ matrix.build_type == 'cross' && 'true' || 'false' }}
           ngc_login: ${{ matrix.build_type == 'native' && 'true' || 'false' }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+          ngc_api_key: ${{ secrets.NGC_API_KEY }}
 
       # --- Сборка минимального базового образа ---
       - name: Build and push minimal base image
