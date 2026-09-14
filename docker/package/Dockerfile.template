@@ -1,0 +1,67 @@
+# ============================================================================
+# Шаблон сборки ROS2-пакета с CUDA (multi-stage: builder → final)
+# ============================================================================
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS builder
+
+ARG PACKAGE_GIT
+ARG PACKAGE_BRANCH=main
+ARG PACKAGE_NAME
+ARG CMAKE_ARGS=""
+ARG CUDA_ARCHITECTURES=auto
+
+SHELL ["/bin/bash", "-c"]
+
+WORKDIR /ros2_ws/src
+RUN git clone --depth 1 --branch ${PACKAGE_BRANCH} \
+        ${PACKAGE_GIT} ${PACKAGE_NAME} && \
+    rm -rf ${PACKAGE_NAME}/.git
+
+# --- Специфичные зависимости FAST-LIVO2 (Sophus + Vikit) ---
+RUN if [ "${PACKAGE_NAME}" = "fast-livo2" ] || [ "${PACKAGE_NAME}" = "FAST-LIVO2" ]; then \
+        echo "=== Installing Sophus (GCC 11+ patch) ===" && \
+        git clone --depth 1 https://github.com/strasdat/Sophus.git /tmp/Sophus && \
+        cd /tmp/Sophus && git checkout a621ff2e && \
+        sed -i -E \
+            -e 's/unit_complex_\.real\(\) = ([0-9.]+);/unit_complex_.real(\1);/' \
+            -e 's/unit_complex_\.imag\(\) = ([0-9.]+);/unit_complex_.imag(\1);/' \
+            /tmp/Sophus/sophus/so2.cpp && \
+        mkdir build && cd build && \
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF && \
+        make -j$(nproc) && make install && ldconfig && \
+        echo "=== Installing Vikit ===" && \
+        git clone --depth 1 https://github.com/ethz-asl/vikit.git /tmp/vikit && \
+        cd /tmp/vikit && mkdir build && cd build && \
+        cmake .. -DCMAKE_BUILD_TYPE=Release && \
+        make -j$(nproc) && make install; \
+    fi
+
+# --- Сборка через colcon ---
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    colcon build \
+        --packages-select ${PACKAGE_NAME} \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release ${CMAKE_ARGS} \
+            ${CUDA_ARCHITECTURES:+ -DCUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}} \
+        --parallel-workers $(nproc)
+
+# ============================================================================
+# Финальная стадия: только артефакты (без исходников и компиляторов)
+# ============================================================================
+FROM ${BASE_IMAGE} AS final
+
+ARG PACKAGE_NAME
+ENV PACKAGE_NAME=${PACKAGE_NAME}
+
+COPY --from=builder --chown=ros:ros /ros2_ws/install /ros2_ws/install
+
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /home/ros/.bashrc && \
+    echo "source /ros2_ws/install/setup.bash" >> /home/ros/.bashrc
+
+WORKDIR /ros2_ws
+USER ros
+
+LABEL org.opencontainers.image.title="${PACKAGE_NAME}" \
+      org.opencontainers.image.description="ROS2 ${ROS_DISTRO} package: ${PACKAGE_NAME}"
+
+CMD ["/bin/bash"]

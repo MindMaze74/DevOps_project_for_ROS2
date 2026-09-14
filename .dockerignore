@@ -1,0 +1,11 @@
+# Exclude unnecessary files from Docker build context
+.git
+.github
+docs
+*.md
+scripts
+config
+.gitignore
+**/node_modules
+**/__pycache__
+**/*.pyc

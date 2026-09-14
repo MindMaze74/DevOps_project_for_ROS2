@@ -1,0 +1,18 @@
+# Build artifacts
+*.o
+*.so
+build/
+install/
+log/
+devel/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Trivy
+trivy-results.sarif

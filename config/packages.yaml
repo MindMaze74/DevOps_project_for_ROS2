@@ -1,0 +1,22 @@
+# ============================================================================
+# Список ROS2-пакетов для автоматической сборки
+# ============================================================================
+# Добавление нового пакета: одна запись в массив packages.
+#
+# Поля:
+#   name       — имя пакета (используется как имя директории в /ros2_ws/src)
+#   git        — URL Git-репозитория
+#   branch     — ветка для сборки
+#   cmake_args — дополнительные аргументы CMake
+# ============================================================================
+
+packages:
+  - name: fast-lio2
+    git: https://github.com/hku-mars/FAST_LIO
+    branch: main
+    cmake_args: -DCMAKE_BUILD_TYPE=Release
+
+  - name: fast-livo2
+    git: https://github.com/hku-mars/FAST-LIVO2
+    branch: main
+    cmake_args: -DCMAKE_BUILD_TYPE=Release
