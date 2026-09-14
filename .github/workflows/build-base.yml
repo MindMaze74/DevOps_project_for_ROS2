@@ -1,19 +1,6 @@
 # ============================================================================
 # Сборка базовых образов ROS2 Humble + CUDA
 # ============================================================================
-# Для каждой платформы собирается два варианта:
-#   <platform>-minimal  — ROS2 Humble + CUDA + build tools
-#   <platform>-slam     — minimal + PCL, OpenCV, Eigen, Boost, yaml-cpp
-#
-# Способ cross (QEMU на x86):
-#   - amd64            → nvidia/cuda:12.9.0-devel-ubuntu22.04
-#   - arm64-agx        → nvidia/cuda:12.8.2-devel-ubuntu22.04
-#   - arm64-nano       → nvidia/cuda:12.8.2-devel-ubuntu22.04
-#
-# Способ native (self-hosted Jetson):
-#   - arm64-agx-native → nvcr.io/nvidia/l4t-jetpack:r36.4.0
-#   - arm64-nano-native→ nvcr.io/nvidia/l4t-jetpack:r36.4.0
-# ============================================================================
 name: Build Base Images
 
 on:
@@ -81,7 +68,6 @@ jobs:
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
           ngc_api_key: ${{ secrets.NGC_API_KEY }}
 
-      # --- Сборка минимального базового образа ---
       - name: Build and push minimal base image
         uses: docker/build-push-action@v5
         with:
@@ -97,7 +83,6 @@ jobs:
           cache-from: type=gha,scope=base-${{ matrix.tag_suffix }}-minimal
           cache-to: type=gha,mode=max,scope=base-${{ matrix.tag_suffix }}-minimal
 
-      # --- SLAM-расширение (только если with_slam=true) ---
       - name: Build and push SLAM extension
         if: matrix.with_slam == 'true'
         uses: docker/build-push-action@v5
@@ -114,7 +99,6 @@ jobs:
           cache-from: type=gha,scope=base-${{ matrix.tag_suffix }}-slam
           cache-to: type=gha,mode=max,scope=base-${{ matrix.tag_suffix }}-slam
 
-      # --- Алиас: tag_suffix → удобный пользовательский тег ---
       - name: Publish convenience tag
         if: matrix.with_slam == 'true'
         run: |
@@ -122,7 +106,6 @@ jobs:
           TARGET=${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tag_suffix }}
           docker buildx imagetools create --tag "${TARGET}" "${SRC}"
 
-      # --- Верификация (ROS2 + CUDA) ---
       - name: Verify image (ROS2 + CUDA per TZ)
         run: |
           IMAGE=${{ env.REGISTRY }}/${{ env.REPO_SLUG }}/ros2-humble-cuda-base:${{ matrix.tag_suffix }}${{ matrix.with_slam == 'true' && '-slam' || '-minimal' }}

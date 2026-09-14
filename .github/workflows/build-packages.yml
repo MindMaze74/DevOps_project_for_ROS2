@@ -1,14 +1,6 @@
 # ============================================================================
 # Сборка ROS2-пакетов поверх базовых образов
 # ============================================================================
-# Для каждого пакета используется base_variant из config/packages.yaml:
-#   minimal → ros2-humble-cuda-base:<tag_suffix>-minimal
-#   slam    → ros2-humble-cuda-base:<tag_suffix>-slam
-#
-# Для amd64 тег base — <tag_suffix>-<variant> (без cross/native суффикса).
-# Для ARM64 cross — <platform>-cross-<variant>.
-# Для ARM64 native — <platform>-native (содержит SLAM из l4t-jetpack).
-# ============================================================================
 name: Build Packages
 
 on:
@@ -91,10 +83,6 @@ jobs:
           ngc_login: 'false'
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- Определение base-тега ---
-      # amd64/cross:     <tag_suffix>-<variant>              (напр. amd64-slam)
-      # arm64/cross:     <tag_suffix>-<variant>              (напр. arm64-agx-cross-slam)
-      # arm64/native:    <platform>-native                    (SLAM из l4t-jetpack)
       - name: Resolve base tag
         id: base
         run: |
@@ -128,7 +116,6 @@ jobs:
           cache-from: type=gha,scope=pkg-${{ matrix.package }}-${{ matrix.tag_suffix }}
           cache-to: type=gha,mode=max,scope=pkg-${{ matrix.package }}-${{ matrix.tag_suffix }}
 
-      # --- Тесты (только в PR или native) ---
       - name: "Test: CUDA + ROS2 + package"
         if: github.event_name == 'pull_request' || matrix.build_type == 'native'
         run: |

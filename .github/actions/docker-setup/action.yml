@@ -1,11 +1,8 @@
 # ============================================================================
 # Composite action: настройка Docker-окружения
 # ============================================================================
-# Устраняет дублирование шагов между build-base.yml и build-packages.yml.
-#
 # ВАЖНО: composite actions НЕ имеют доступа к secrets напрямую.
-# Секреты (GITHUB_TOKEN, NGC_API_KEY) передаются явно через inputs
-# из вызывающего workflow.
+# Секреты передаются явно через inputs из вызывающего workflow.
 # ============================================================================
 name: 'Docker Setup'
 description: 'Lowercase slug, QEMU, Buildx, GHCR/NGC login'
@@ -24,10 +21,10 @@ inputs:
     required: false
     default: 'false'
   ghcr_token:
-    description: 'GHCR token (pass ${{ secrets.GITHUB_TOKEN }})'
+    description: 'GHCR token (pass GITHUB_TOKEN from workflow)'
     required: true
   ngc_api_key:
-    description: 'NVIDIA NGC API key (pass ${{ secrets.NGC_API_KEY }})'
+    description: 'NVIDIA NGC API key (pass NGC_API_KEY from workflow)'
     required: false
     default: ''
 
