@@ -1,29 +1,39 @@
 # ============================================================================
-# Базовый Docker-образ: ROS2 Humble + CUDA
+# Базовый Docker-образ: ROS2 Humble + CUDA (минимальный, без SLAM)
 # ============================================================================
 # Паттерны: Multi-Stage Build, Security Hardening (non-root), Health Check
+#
+# Контракт для downstream-образов (см. docker/CONTRACT.md):
+#   ROS2_USER     = ros
+#   ROS2_WS       = /ros2_ws
+#   ROS2_INSTALL  = /ros2_ws/install
+#   ROS_DISTRO    = humble
+#
+# SLAM-специфичные библиотеки (PCL, OpenCV, Eigen) вынесены в
+# docker/base/slam.Dockerfile — собирается как отдельный слой поверх
+# этого образа. Минимальная база их не содержит.
 # ============================================================================
 
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE} AS base
 
-ENV ROS_DISTRO=humble
-ENV DEBIAN_FRONTEND=noninteractive
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
-
 # --- Locale + базовые утилиты ---
+# ИСПРАВЛЕНО: ENV LANG/LC_ALL устанавливаются ПОСЛЕ locale-gen (порядок слоёв)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         locales curl gnupg2 lsb-release ca-certificates \
     && locale-gen en_US en_US.UTF-8 \
     && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 
+ENV ROS_DISTRO=humble
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
 # --- Репозиторий ROS2 (все архитектуры) ---
-# ИСПРАВЛЕНО: убрано условие uname -m, потому что:
-#   - На ARM64 внутри QEMU uname возвращает "aarch64" → репа не добавлялась
-#   - nvidia/cuda:*-ubuntu22.04 НЕ содержит ROS2 репу
-#   - На Jetson (l4t-jetpack) репа уже есть, но повторное добавление безопасно
+# Условие uname -m удалено: внутри QEMU на ARM64 uname возвращает aarch64,
+# nvidia/cuda:*-ubuntu22.04 не содержит ROS2 репу, а повторное добавление
+# репы в l4t-jetpack безопасно.
 RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         -o /usr/share/keyrings/ros-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) \
@@ -39,24 +49,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake git wget \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rosdep init 2>/dev/null || true && \
+# --- rosdep ---
+# ИСПРАВЛЕНО: не глушим ошибки полностью, сохраняем лог для отладки
+RUN rosdep init 2>&1 | tee /tmp/rosdep-init.log || true && \
     rosdep update --rosdistro ${ROS_DISTRO}
 
-# --- Системные зависимости для SLAM ---
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libeigen3-dev libboost-all-dev libpcl-dev \
-        libopencv-dev libyaml-cpp-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install --no-cache-dir numpy scipy
-RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# --- Contract ENV: единый источник истины для downstream-образов ---
+ENV ROS2_USER=ros
+ENV ROS2_WS=/ros2_ws
+ENV ROS2_INSTALL=/ros2_ws/install
 
 # --- Security Hardening: non-root user ---
-RUN groupadd -r ros && useradd -r -g ros -m -s /bin/bash ros && \
-    mkdir -p /ros2_ws/src && chown -R ros:ros /ros2_ws
+# Создаём каталог workspace, но БЕЗ подкаталога src —
+# его создаёт package Dockerfile для своей сборки.
+RUN groupadd -r ${ROS2_USER} && \
+    useradd -r -g ${ROS2_USER} -m -s /bin/bash ${ROS2_USER} && \
+    mkdir -p ${ROS2_WS} && \
+    chown -R ${ROS2_USER}:${ROS2_USER} ${ROS2_WS}
 
-WORKDIR /ros2_ws
-USER ros
+WORKDIR ${ROS2_WS}
+USER ${ROS2_USER}
 
 # --- Health Check ---
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \

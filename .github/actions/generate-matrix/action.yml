@@ -1,0 +1,69 @@
+# ============================================================================
+# Composite action: генерация build-matrix
+# ============================================================================
+# Устраняет дублирование логики jq между build-base.yml и build-packages.yml.
+#
+# Логика:
+#   1. Фильтрует spec по build_type (cross | native | both)
+#   2. Опционально умножает результат на packages (декартово произведение)
+#
+# Если packages пустой → matrix = filtered spec.
+# Если packages задан → matrix = spec × packages с добавлением полей пакета.
+# ============================================================================
+name: 'Generate Matrix'
+description: 'Filter spec by build_type; optionally multiply by packages'
+
+inputs:
+  spec:
+    description: 'JSON array of platform/build_type combos'
+    required: true
+  build_type:
+    description: 'cross | native | both'
+    required: false
+    default: 'cross'
+  packages:
+    description: 'Optional JSON array of packages (from packages.yaml)'
+    required: false
+    default: ''
+
+outputs:
+  matrix:
+    description: 'Final matrix JSON'
+    value: ${{ steps.gen.outputs.matrix }}
+
+runs:
+  using: composite
+  steps:
+    - id: gen
+      shell: bash
+      run: |
+        SPEC='${{ inputs.spec }}'
+        BT='${{ inputs.build_type }}'
+        PKGS='${{ inputs.packages }}'
+
+        if [ "$BT" = "both" ]; then
+          FILTERED="$SPEC"
+        else
+          FILTERED=$(echo "$SPEC" | jq -c --arg bt "$BT" \
+            '[.[] | select(.build_type == $bt)]')
+        fi
+
+        if [ -n "$PKGS" ] && [ "$PKGS" != "[]" ] && [ "$PKGS" != "null" ]; then
+          MATRIX=$(jq -nc --argjson pkgs "$PKGS" --argjson combos "$FILTERED" \
+            '{include: [
+              $combos[] as $c | $pkgs[] as $pkg | $c + {
+                package: $pkg.name,
+                git: $pkg.git,
+                branch: $pkg.branch,
+                cmake_args: $pkg.cmake_args,
+                base_variant: ($pkg.base_variant // "minimal"),
+                deps_script: ($pkg.deps_script // "")
+              }
+            ]}')
+        else
+          MATRIX=$(jq -nc --argjson m "$FILTERED" '{include: $m}')
+        fi
+
+        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+        echo "=== Generated matrix ==="
+        echo "$MATRIX" | jq .

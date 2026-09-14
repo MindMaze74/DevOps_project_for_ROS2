@@ -1,6 +1,20 @@
 # ============================================================================
 # Шаблон сборки ROS2-пакета с CUDA (multi-stage: builder → final)
 # ============================================================================
+# Универсальный. Никаких if по имени пакета.
+# Пакет-специфичные зависимости подключаются через PACKAGE_DEPS_SCRIPT.
+#
+# Аргументы:
+#   BASE_IMAGE            — базовый образ (обязательно)
+#   PACKAGE_GIT           — Git URL пакета (обязательно)
+#   PACKAGE_BRANCH        — ветка (default: main)
+#   PACKAGE_NAME          — имя пакета = имя директории в /ros2_ws/src
+#   CMAKE_ARGS            — доп. флаги CMake
+#   CUDA_ARCHITECTURES    — целевые CUDA-архитектуры (пусто = не передавать)
+#   PACKAGE_DEPS_SCRIPT   — путь к скрипту установки специфичных зависимостей
+#                            (относительно контекста сборки, например
+#                             docker/package/deps/fast-livo2.sh)
+# ============================================================================
 
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE} AS builder
@@ -9,32 +23,34 @@ ARG PACKAGE_GIT
 ARG PACKAGE_BRANCH=main
 ARG PACKAGE_NAME
 ARG CMAKE_ARGS=""
-ARG CUDA_ARCHITECTURES=auto
+ARG CUDA_ARCHITECTURES=""
+ARG PACKAGE_DEPS_SCRIPT=""
 
 SHELL ["/bin/bash", "-c"]
 
-WORKDIR /ros2_ws/src
+# --- Копируем hook-скрипты (небольшие, всегда) ---
+COPY docker/package/deps/ /tmp/deps/
+
+# --- Создаём рабочую директорию (перенесено из base) ---
+USER root
+RUN mkdir -p ${ROS2_WS}/src && chown -R ${ROS2_USER}:${ROS2_USER} ${ROS2_WS}
+USER ${ROS2_USER}
+
+WORKDIR ${ROS2_WS}/src
+
+# --- Клонирование пакета ---
 RUN git clone --depth 1 --branch ${PACKAGE_BRANCH} \
         ${PACKAGE_GIT} ${PACKAGE_NAME} && \
     rm -rf ${PACKAGE_NAME}/.git
 
-# --- Специфичные зависимости FAST-LIVO2 (Sophus + Vikit) ---
-RUN if [ "${PACKAGE_NAME}" = "fast-livo2" ] || [ "${PACKAGE_NAME}" = "FAST-LIVO2" ]; then \
-        echo "=== Installing Sophus ===" && \
-        git clone --depth 1 https://github.com/strasdat/Sophus.git /tmp/Sophus && \
-        cd /tmp/Sophus && git checkout a621ff2e && \
-        sed -i -E \
-            -e 's/unit_complex_\.real\(\) = ([0-9.]+);/unit_complex_.real(\1);/' \
-            -e 's/unit_complex_\.imag\(\) = ([0-9.]+);/unit_complex_.imag(\1);/' \
-            /tmp/Sophus/sophus/so2.cpp && \
-        mkdir build && cd build && \
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF && \
-        make -j$(nproc) && make install && ldconfig && \
-        echo "=== Installing Vikit ===" && \
-        git clone --depth 1 https://github.com/ethz-asl/vikit.git /tmp/vikit && \
-        cd /tmp/vikit && mkdir build && cd build && \
-        cmake .. -DCMAKE_BUILD_TYPE=Release && \
-        make -j$(nproc) && make install; \
+# --- Пакет-специфичные зависимости (если задан скрипт) ---
+# Универсальный шаблон: любая специфика — во внешнем hook-скрипте.
+RUN if [ -n "${PACKAGE_DEPS_SCRIPT}" ]; then \
+        echo "=== Running deps script: ${PACKAGE_DEPS_SCRIPT} ===" && \
+        bash /tmp/deps/$(basename ${PACKAGE_DEPS_SCRIPT}) && \
+        echo "=== Deps script complete ==="; \
+    else \
+        echo "=== No deps script — universal build ==="; \
     fi
 
 # --- Сборка через colcon ---
@@ -53,13 +69,16 @@ FROM ${BASE_IMAGE} AS final
 ARG PACKAGE_NAME
 ENV PACKAGE_NAME=${PACKAGE_NAME}
 
-COPY --from=builder --chown=ros:ros /ros2_ws/install /ros2_ws/install
+# --- Копирование собранных артефактов с использованием контракта ---
+COPY --from=builder --chown=${ROS2_USER}:${ROS2_USER} \
+     ${ROS2_INSTALL} ${ROS2_INSTALL}
 
-RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /home/ros/.bashrc && \
-    echo "source /ros2_ws/install/setup.bash" >> /home/ros/.bashrc
+# --- Настройка окружения ---
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /home/${ROS2_USER}/.bashrc && \
+    echo "source ${ROS2_INSTALL}/setup.bash" >> /home/${ROS2_USER}/.bashrc
 
-WORKDIR /ros2_ws
-USER ros
+WORKDIR ${ROS2_WS}
+USER ${ROS2_USER}
 
 LABEL org.opencontainers.image.title="${PACKAGE_NAME}" \
       org.opencontainers.image.description="ROS2 ${ROS_DISTRO} package: ${PACKAGE_NAME}"

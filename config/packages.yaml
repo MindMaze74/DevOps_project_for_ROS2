@@ -4,10 +4,17 @@
 # Добавление нового пакета: одна запись в массив packages.
 #
 # Поля:
-#   name       — имя пакета (директория в /ros2_ws/src)
-#   git        — URL Git-репозитория
-#   branch     — ветка для сборки
-#   cmake_args — дополнительные аргументы CMake
+#   name           — имя пакета (директория в /ros2_ws/src)
+#   git            — URL Git-репозитория
+#   branch         — ветка для сборки
+#   cmake_args     — дополнительные аргументы CMake
+#   base_variant   — minimal | slam (default: minimal)
+#                    Определяет, поверх какого base-образа собирать пакет:
+#                      - minimal → ros2-humble-cuda-base:<platform>-minimal
+#                      - slam    → ros2-humble-cuda-base:<platform>-slam
+#   deps_script    — опциональный путь к hook-скрипту установки
+#                    специфичных зависимостей пакета. Скрипт подключается
+#                    через PACKAGE_DEPS_SCRIPT в Dockerfile.template.
 # ============================================================================
 
 packages:
@@ -15,8 +22,11 @@ packages:
     git: https://github.com/hku-mars/FAST_LIO
     branch: main
     cmake_args: -DCMAKE_BUILD_TYPE=Release
+    base_variant: slam
 
   - name: fast-livo2
     git: https://github.com/hku-mars/FAST-LIVO2
     branch: main
     cmake_args: -DCMAKE_BUILD_TYPE=Release
+    base_variant: slam
+    deps_script: docker/package/deps/fast-livo2.sh
